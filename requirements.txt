@@ -1,0 +1,4 @@
+torch
+k-diffusion
+diffusers
+transformers
