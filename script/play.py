@@ -1,5 +1,6 @@
 from contextlib import nullcontext
-from diffusers import UNet2DConditionModel, AutoencoderKL
+from diffusers.models.unets.unet_2d_condition import UNet2DConditionModel
+from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKL
 from diffusers.models.autoencoders.vae import DecoderOutput
 from transformers import CLIPPreTrainedModel, CLIPTextModel, CLIPTextModelWithProjection, CLIPTokenizer, BatchEncoding
 from transformers.modeling_outputs import BaseModelOutputWithPooling
