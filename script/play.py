@@ -50,20 +50,29 @@ sampling_dtype = torch.float32
 # if you're on a Mac: don't bother with this; VRAM and RAM are the same thing.
 swap_models = False
 
+use_kohaku = True
+
 stability_model_name = 'stabilityai/stable-diffusion-xl-base-0.9'
-default_model_name = base_unet_model_name = stability_model_name
+kohaku_model_name = 'KBlueLeaf/Kohaku-XL-Delta'
+default_model_name = kohaku_model_name if use_kohaku else stability_model_name
 
 use_refiner = False
 unets: List[UNet2DConditionModel] = [UNet2DConditionModel.from_pretrained(
   unet_name,
   torch_dtype=torch.float16,
-  use_safetensors=True,
-  variant='fp16',
+  use_safetensors=unet_use_safetensors,
+  variant=unet_variant,
   subfolder='unet',
-).eval() for unet_name in [
-  base_unet_model_name,
-  *(['stabilityai/stable-diffusion-xl-refiner-0.9'] * use_refiner),
-  ]
+).eval() for unet_name, unet_variant, unet_use_safetensors in zip([
+    default_model_name,
+    *(['stabilityai/stable-diffusion-xl-refiner-0.9'] * use_refiner),
+  ], [
+    'fp16' if default_model_name == stability_model_name else None,
+    *([None] * use_refiner),
+  ], [
+    default_model_name != kohaku_model_name,
+    *([True] * use_refiner),
+  ])
 ]
 base_unet: UNet2DConditionModel = unets[0]
 refiner_unet: Optional[UNet2DConditionModel] = unets[1] if use_refiner else None
@@ -86,16 +95,16 @@ tok_vit_l, tok_vit_big_g = tokenizers
 vit_l: CLIPTextModel = CLIPTextModel.from_pretrained(
   default_model_name,
   torch_dtype=torch.float16,
-  use_safetensors=True,
-  variant='fp16',
+  use_safetensors=default_model_name != kohaku_model_name,
+  variant='fp16' if default_model_name == stability_model_name else None,
   subfolder='text_encoder',
 ).eval()
 
 vit_big_g: CLIPTextModelWithProjection = CLIPTextModelWithProjection.from_pretrained(
   default_model_name,
   torch_dtype=torch.float16,
-  use_safetensors=True,
-  variant='fp16',
+  use_safetensors=default_model_name != kohaku_model_name,
+  variant='fp16' if default_model_name == stability_model_name else None,
   subfolder='text_encoder_2',
 ).eval()
 
