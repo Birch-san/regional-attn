@@ -18,5 +18,5 @@ pip install -r requirements.txt
 _Ensure virtualenv has been activated._
 
 ```bash
-python
+python -m script.play
 ```
