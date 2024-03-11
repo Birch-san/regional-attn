@@ -43,7 +43,6 @@ device = torch.device(device_type)
 
 # https://birchlabs.co.uk/machine-learning#denoise-in-fp16-sample-in-fp32
 sampling_dtype = torch.float32
-# sampling_dtype = torch.float16
 
 # if you have low VRAM, then we can swap Unets and VAE into VRAM and back as needed.
 # if you have high VRAM: don't bother with this because swapping costs time.
