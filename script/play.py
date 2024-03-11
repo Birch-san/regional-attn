@@ -169,7 +169,8 @@ force_zeros_for_empty_prompt = True
 
 uncond_prompt: Optional[str] = None if force_zeros_for_empty_prompt else ''
 
-negative_prompt: Optional[str] = uncond_prompt
+# negative_prompt: Optional[str] = uncond_prompt
+negative_prompt: Optional[str] = 'low quality, blurry, weird proportions, weird eyes, disfigured hands, bad anatomy, unrealistic, uninteresting, ugly'
 prompt: str = 'photo of absolute power, grand celestial woman'
 prompts: List[str] = [
   *([] if negative_prompt is None or cfg_scale == 1. else [negative_prompt]),
