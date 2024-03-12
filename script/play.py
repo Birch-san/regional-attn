@@ -36,7 +36,8 @@ from src.device_ctx import to_device
 from src.rgb_to_pil import rgb_to_pil
 from src.latents_to_pils import LatentsToBCHW, LatentsToPils, make_latents_to_bchw, make_latents_to_pils
 from src.log_intermediates import LogIntermediatesFactory, LogIntermediates, make_log_intermediates_factory
-from src.attention.regional_attn import RegionalAttnProcessor
+from src.attention.visit_attns import AttnAcceptor, visit_attns
+from src.attention.set_attn_processor import set_attn_processor, make_regional_attn
 
 logger: Logger = getLogger(__file__)
 
@@ -77,12 +78,6 @@ unets: List[UNet2DConditionModel] = [UNet2DConditionModel.from_pretrained(
 ]
 base_unet: UNet2DConditionModel = unets[0]
 refiner_unet: Optional[UNet2DConditionModel] = unets[1] if use_refiner else None
-
-modify_xattn = True
-if modify_xattn:
-  regional_attn = RegionalAttnProcessor()
-  for unet in unets:
-    unet.set_attn_processor(regional_attn)
 
 compile = False
 if compile:
@@ -354,6 +349,18 @@ out_imgs: List[str] = sorted(out_imgs_unsorted, key=out_keyer)
 next_ix = get_out_ix(Path(out_imgs[-1]).stem)+1 if out_imgs else 0
 
 latents_shape = LatentsShape(base_unet.config.in_channels, height_lt, width_lt)
+
+modify_xattn = True
+if modify_xattn:
+  sample_size = Dimensions(height=latents_shape.height, width=latents_shape.width)
+  for unet in unets:
+    regional_attn_maker: AttnAcceptor = partial(
+      make_regional_attn,
+      sample_size=sample_size,
+    )
+    attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=regional_attn_maker)
+    visit_receipt = visit_attns(unet, levels=len(unet.down_blocks)+1, attn_acceptor=attn_setter, self_attn=False, xattn=True)
+    print(f'Visited attention in {visit_receipt.down_blocks_touched} down blocks, {visit_receipt.up_blocks_touched} up blocks, and {visit_receipt.mid_blocks_touched} mid blocks.')
 
 # we generate with CPU random so that results can be reproduced across platforms
 generator = Generator(device='cpu')

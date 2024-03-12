@@ -1,31 +1,25 @@
 import torch.nn.functional as F
-from diffusers.models.attention_processor import Attention, AttnProcessor2_0
+from diffusers.models.attention_processor import Attention
 from diffusers.utils import USE_PEFT_BACKEND
 from torch import FloatTensor
-from typing import Optional, Protocol
+from typing import Optional
+from dataclasses import dataclass
 
-class AttnProcessorProto(Protocol):
-    def __call__(
-        self,
-        attn: Attention,
-        hidden_states: FloatTensor,
-        encoder_hidden_states: Optional[FloatTensor] = None,
-        attention_mask: Optional[FloatTensor] = None,
-        temb: Optional[FloatTensor] = None,
-        scale: float = 1.0,
-    ) -> FloatTensor: ...
+from .attn_processor import AttnProcessor
+from ..dimensions import Dimensions
 
 # Based on diffusers AttnProcessor2_0 code:
 # - https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py
 # - copyright 2023 The HuggingFace Team,
 # - Apache License 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
 # Modifications by Alex Birch to support regional attention
-class RegionalAttnProcessor:
-    self_attn: AttnProcessorProto
-    def __init__(self, self_attn_delegate: Optional[AttnProcessorProto] = None):
+@dataclass
+class RegionalAttnProcessor(AttnProcessor):
+    expect_size: Dimensions
+    
+    def __post_init__(self):
         if not hasattr(F, "scaled_dot_product_attention"):
             raise ImportError("RegionalAttnProcessor requires PyTorch 2.0, to use it, please upgrade PyTorch to 2.0.")
-        self.self_attn = AttnProcessor2_0() if self_attn_delegate is None else self_attn_delegate
 
     def __call__(
         self,
@@ -36,18 +30,8 @@ class RegionalAttnProcessor:
         temb: Optional[FloatTensor] = None,
         scale: float = 1.0,
     ) -> FloatTensor:
-        if encoder_hidden_states is None:
-            # we don't handle self-attention
-            return self.self_attn(
-                attn,
-                hidden_states,
-                encoder_hidden_states=encoder_hidden_states,
-                attention_mask=attention_mask,
-                temb=temb,
-                scale=scale,
-            )
-        # this attention processor wants full management of attn masking
-        assert attention_mask is None
+        assert encoder_hidden_states is not None, "we don't handle self-attention"
+        assert attention_mask is None, "we want full management of attn masking"
 
         residual = hidden_states
         if attn.spatial_norm is not None:
