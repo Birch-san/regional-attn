@@ -36,6 +36,8 @@ from src.device_ctx import to_device
 from src.rgb_to_pil import rgb_to_pil
 from src.latents_to_pils import LatentsToBCHW, LatentsToPils, make_latents_to_bchw, make_latents_to_pils
 from src.log_intermediates import LogIntermediatesFactory, LogIntermediates, make_log_intermediates_factory
+from src.attention.visit_attns import AttnAcceptor, visit_attns
+from src.attention.set_attn_processor import set_attn_processor, make_regional_attn
 
 logger: Logger = getLogger(__file__)
 
@@ -180,7 +182,8 @@ force_zeros_for_empty_prompt = True
 uncond_prompt: Optional[str] = None if force_zeros_for_empty_prompt else ''
 
 # negative_prompt: Optional[str] = uncond_prompt
-negative_prompt: Optional[str] = 'low quality, blurry, weird proportions, weird eyes, disfigured hands, bad anatomy, unrealistic, uninteresting, ugly'
+# negative_prompt: Optional[str] = 'low quality, blurry, weird proportions, weird eyes, disfigured hands, bad anatomy, unrealistic, uninteresting, ugly'
+negative_prompt: Optional[str] = 'worst quality, low quality, normal quality, old, early, lowres, bad anatomy, blurry, cropped, text, jpeg artifacts, signature, watermark, username, artist name, trademark, title, multiple view, reference sheet, long body, disfigured, ugly, monochrome, transparent background'
 prompt: str = 'photo of absolute power, grand celestial woman'
 prompts: List[str] = [
   *([] if negative_prompt is None or cfg_scale == 1. else [negative_prompt]),
@@ -293,7 +296,8 @@ denoiser_factory_factory: DenoiserFactoryFactory[CFGDenoiser] = lambda delegate:
 base_denoiser_factory: DenoiserFactory[Denoiser] = denoiser_factory_factory(base_unet_k_wrapped)
 refiner_denoiser_factory: Optional[DenoiserFactory[Denoiser]] = denoiser_factory_factory(refiner_unet_k_wrapped) if use_refiner else None
 
-schedule_template = KarrasScheduleTemplate.CudaMasteringMaximizeRefiner
+# schedule_template = KarrasScheduleTemplate.CudaMasteringMaximizeRefiner
+schedule_template = KarrasScheduleTemplate.Mastering
 schedule: KarrasScheduleParams = get_template_schedule(
   schedule_template,
   model_sigma_min=base_unet_k_wrapped.sigma_min,
@@ -348,6 +352,19 @@ out_imgs: List[str] = sorted(out_imgs_unsorted, key=out_keyer)
 next_ix = get_out_ix(Path(out_imgs[-1]).stem)+1 if out_imgs else 0
 
 latents_shape = LatentsShape(base_unet.config.in_channels, height_lt, width_lt)
+
+modify_xattn = True
+if modify_xattn:
+  sample_size = Dimensions(height=latents_shape.height, width=latents_shape.width)
+  for unet in unets:
+    regional_attn_maker: AttnAcceptor = partial(
+      make_regional_attn,
+      sample_size=sample_size,
+      embs=,
+    )
+    attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=regional_attn_maker)
+    visit_receipt = visit_attns(unet, levels=len(unet.down_blocks)+1, attn_acceptor=attn_setter, self_attn=False, xattn=True)
+    print(f'Visited attention in {visit_receipt.down_blocks_touched} down blocks, {visit_receipt.up_blocks_touched} up blocks, and {visit_receipt.mid_blocks_touched} mid blocks.')
 
 # we generate with CPU random so that results can be reproduced across platforms
 generator = Generator(device='cpu')

@@ -1,5 +1,6 @@
 from diffusers.models.attention import Attention
 from typing import Protocol
+from torch import FloatTensor
 import torch
 from .attn_processor import AttnProcessor
 from .regional_attn import RegionalAttnProcessor
@@ -17,6 +18,7 @@ def make_regional_attn(
   attn: Attention,
   level: int,
   sample_size: Dimensions,
+  embs: FloatTensor,
 ) -> RegionalAttnProcessor:
   downsampled_size = sample_size
   # yes I know about raising 2 to the power of negative number, but I want to model a repeated rounding-down
@@ -27,5 +29,5 @@ def make_regional_attn(
     size_probe = downsample(size_probe)
     height, width = size_probe.shape[1:]
     downsampled_size = Dimensions(height=height, width=width)
-  natten = RegionalAttnProcessor(expect_size=downsampled_size)
-  return natten
+  attn = RegionalAttnProcessor(expect_size=downsampled_size, embs=embs)
+  return attn

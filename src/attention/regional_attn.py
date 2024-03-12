@@ -17,6 +17,7 @@ from ..dimensions import Dimensions
 @dataclass
 class RegionalAttnProcessor(AttnProcessor):
     expect_size: Dimensions
+    embs: FloatTensor
     
     def __post_init__(self):
         if not hasattr(F, "scaled_dot_product_attention"):
@@ -35,6 +36,7 @@ class RegionalAttnProcessor(AttnProcessor):
         assert attention_mask is None, "we want full management of attn masking"
         assert hidden_states.ndim == 3, f"Expected a disappointing 3D tensor that I would have the fun job of unflattening. Instead received {hidden_states.ndim}-dimensional tensor."
         assert hidden_states.size(-2) == self.expect_size.height * self.expect_size.width, "Sequence dimension is not equal to the product of expected height and width, so we cannot unflatten sequence into 2D sequence."
+        # print(encoder_hidden_states.shape) [2, 77, 2048]
 
         residual = hidden_states
         if attn.spatial_norm is not None:
