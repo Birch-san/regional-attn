@@ -40,8 +40,8 @@ def visit_attns(unet: UNet2DConditionModel, levels: int, attn_acceptor: AttnAcce
     if isinstance(unet.mid_block, UNetMidBlock2DCrossAttn):
       mid_blocks_touched += 1
       for t2d in unet.mid_block.attentions:
-        # level count might be wrong here (haven't tested this deep), which might have consequences for inferring expected size
-        _visit_t2d(t2d, partial(attn_acceptor, level=len(unet.down_blocks)), self_attn=self_attn, xattn=xattn)
+        # TODO: more principled way to determine level to use here. like counting how many resnet blocks with downsampling were encountered.
+        _visit_t2d(t2d, partial(attn_acceptor, level=len(unet.down_blocks)-1), self_attn=self_attn, xattn=xattn)
 
   for up_block, level in zip(reversed(unet.up_blocks), range(levels)):
     if isinstance(up_block, CrossAttnUpBlock2D):

@@ -2,3 +2,4 @@ torch
 k-diffusion
 diffusers
 transformers
+einops

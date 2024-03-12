@@ -4,6 +4,7 @@ from diffusers.utils import USE_PEFT_BACKEND
 from torch import FloatTensor
 from typing import Optional
 from dataclasses import dataclass
+from einops import rearrange
 
 from .attn_processor import AttnProcessor
 from ..dimensions import Dimensions
@@ -32,20 +33,14 @@ class RegionalAttnProcessor(AttnProcessor):
     ) -> FloatTensor:
         assert encoder_hidden_states is not None, "we don't handle self-attention"
         assert attention_mask is None, "we want full management of attn masking"
+        assert hidden_states.ndim == 3, f"Expected a disappointing 3D tensor that I would have the fun job of unflattening. Instead received {hidden_states.ndim}-dimensional tensor."
+        assert hidden_states.size(-2) == self.expect_size.height * self.expect_size.width, "Sequence dimension is not equal to the product of expected height and width, so we cannot unflatten sequence into 2D sequence."
 
         residual = hidden_states
         if attn.spatial_norm is not None:
             hidden_states = attn.spatial_norm(hidden_states, temb)
 
-        input_ndim = hidden_states.ndim
-
-        if input_ndim == 4:
-            batch_size, channel, height, width = hidden_states.shape
-            hidden_states = hidden_states.view(batch_size, channel, height * width).transpose(1, 2)
-
-        batch_size, sequence_length, _ = (
-            hidden_states.shape if encoder_hidden_states is None else encoder_hidden_states.shape
-        )
+        batch_size, sequence_length, _ = encoder_hidden_states.shape
 
         if attention_mask is not None:
             attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
@@ -67,30 +62,20 @@ class RegionalAttnProcessor(AttnProcessor):
         key: FloatTensor = attn.to_k(encoder_hidden_states, *args)
         value: FloatTensor = attn.to_v(encoder_hidden_states, *args)
 
-        inner_dim = key.shape[-1]
-        head_dim = inner_dim // attn.heads
-
-        query: FloatTensor = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
-
-        key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
-        value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+        query: FloatTensor = rearrange(query, "n (h w) (nh e) -> n nh h w e", nh=attn.heads, h=self.expect_size.height, w=self.expect_size.width)
+        key, value = [rearrange(p, "n s (nh e) -> n nh 1 s e", nh=attn.heads) for p in (key, value)]
 
         # the output of sdp = (batch, num_heads, seq_len, head_dim)
         # TODO: add support for attn.scale when we move to Torch 2.1
         hidden_states = F.scaled_dot_product_attention(
             query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
         )
-
-        hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
         hidden_states = hidden_states.to(query.dtype)
+        hidden_states = rearrange(hidden_states, '... nh h w c -> ... (h w) (nh c)')
 
         out_proj, dropout = attn.to_out
-
         hidden_states = out_proj(hidden_states, *args)
         hidden_states = dropout(hidden_states)
-
-        if input_ndim == 4:
-            hidden_states = hidden_states.transpose(-1, -2).reshape(batch_size, channel, height, width)
 
         if attn.residual_connection:
             hidden_states = hidden_states + residual
