@@ -1,10 +1,16 @@
 {
   "configurations": [
     {
-      "name": "Python Debugger: Play",
+      "name": "Python: Play",
       "type": "debugpy",
       "request": "launch",
       "module": "script.play"
-    }
+    },
+    {
+      "name": "Python: high-pass interp",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "script.hp_interp"
+    },
   ]
 }
