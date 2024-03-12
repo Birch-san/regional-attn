@@ -18,6 +18,9 @@ from pathlib import Path
 from PIL import Image
 from functools import partial
 from time import perf_counter
+from itertools import pairwise
+from dctorch.functional import dct2, idct2
+import math
 
 from src.iteration.batched import batched
 from src.denoisers.denoiser_proto import Denoiser
@@ -352,11 +355,60 @@ latents_shape = LatentsShape(base_unet.config.in_channels, height_lt, width_lt)
 # we generate with CPU random so that results can be reproduced across platforms
 generator = Generator(device='cpu')
 
-max_batch_size = 8
+max_batch_size = 16
 
+betweens = 7
+# betweens = 7
+
+loop_keyframes = True
 start_seed = 29
-sample_count = 1
-seeds = range(start_seed, start_seed+sample_count)
+seed_count = 2
+keyframes: List[int] = list(range(start_seed, start_seed+seed_count))
+if loop_keyframes:
+  keyframes = [*keyframes, start_seed]
+frame_seeds: List[int] = [*[f_seed for k_seed in keyframes[:-1] for f_seed in [k_seed]*betweens], keyframes[-1]]
+noise_keyframes = [randn(
+  (
+    latents_shape.channels,
+    latents_shape.height,
+    latents_shape.width
+  ),
+  dtype=sampling_dtype,
+  device=generator.device,
+  generator=generator.manual_seed(seed),
+).to(device) for seed in keyframes]
+first_frame, *_ = noise_keyframes
+first_frame_dct = dct2(first_frame)
+
+highpass_cutoff = 4
+h_freeze: BoolTensor = torch.arange(latents_shape.height, device=device).unsqueeze(-1) <= highpass_cutoff
+w_freeze: BoolTensor = torch.arange(latents_shape.width, device=device).unsqueeze(0) <= highpass_cutoff
+freeze: BoolTensor = (h_freeze & w_freeze).unsqueeze(0)
+
+linsp: FloatTensor = torch.linspace(0, 1, betweens+1, device=device)
+interp_quotients: FloatTensor = linsp[:-1].repeat(len(keyframes)-1)
+quotients_per_interp: List[FloatTensor] = interp_quotients.reshape(-1, 1, 1, 1).split(betweens)
+
+interp_dcts: List[FloatTensor] = []
+for quotients, (start, end) in zip(quotients_per_interp, pairwise(noise_keyframes)):
+  start_dct, end_dct = dct2(torch.stack([start, end]))
+  start_fadeout: FloatTensor = start_dct * (quotients * math.pi * .5).cos()
+  end_fadein: FloatTensor = end_dct * (quotients * math.pi * .5).sin()
+  dct_interped: FloatTensor = start_fadeout + end_fadein
+
+  dct_hp_interped: FloatTensor = torch.where(freeze, first_frame_dct, dct_interped)
+  interp_dcts.append(dct_hp_interped)
+
+# if our end isn't a duplicate of our start, let's render it
+if keyframes[0] != keyframes[-1]:
+  # add a 0 quotient to the end of our betweens
+  interp_quotients: FloatTensor = pad(interp_quotients, pad=(0, 1), mode='constant')
+  # being the final frame, there's no "next frame" to interpolate to
+  dct: FloatTensor = dct2(noise_keyframes[-1])
+  dct_hp: FloatTensor = torch.where(freeze, first_frame_dct, dct)
+  interp_dcts.append(dct_hp.unsqueeze(0))
+
+noise_frames: Optional[FloatTensor] = idct2(cat(interp_dcts))
 
 if not swap_models:
   base_unet.to(device)
@@ -366,28 +418,16 @@ if not swap_models:
 
 img_provenance: str = 'refined' if use_refiner else 'base'
 
-print(f'Generating {sample_count} images, in batches of {max_batch_size}')
+print(f'Generating {noise_frames.size(0)} images, from seeds {frame_seeds} in batches of {max_batch_size}')
 
-for batch_ix, batch_seeds in enumerate(batched(seeds, max_batch_size)):
-  batch_size: int = len(batch_seeds)
-  print(f'Generating a batch of {batch_size} images, seeds {batch_seeds}')
-  latents: FloatTensor = stack([
-    randn(
-      (
-        latents_shape.channels,
-        latents_shape.height,
-        latents_shape.width
-      ),
-      dtype=sampling_dtype,
-      device=generator.device,
-      generator=generator.manual_seed(seed),
-    ) for seed in batch_seeds
-  ]).to(device)
+for batch_ix, (latents, frame_seeds_, quotients) in enumerate(zip(noise_frames.split(max_batch_size), batched(frame_seeds, max_batch_size), interp_quotients.split(max_batch_size))):
+  batch_size: int = latents.size(0)
+  print(f'Generating a batch of {batch_size} images, seeds {frame_seeds_}, quotients {quotients}')
   latents *= start_sigma
 
   out_stems: List[str] = [
-    f'{(next_ix + batch_ix*max_batch_size + sample_ix):05d}_{img_provenance}_{prompt.split(",")[0]}_{seed}'
-    for sample_ix, seed in enumerate(batch_seeds)
+    f'{(next_ix + batch_ix*max_batch_size + sample_ix):05d}_{img_provenance}_{prompt.split(",")[0]}_s{frame_seed}_t{quotient}'
+    for sample_ix, (quotient, frame_seed) in enumerate(zip(quotients, frame_seeds_))
   ]
 
   if log_intermediates_enabled:
