@@ -4,20 +4,12 @@ from diffusers.utils import USE_PEFT_BACKEND
 import torch
 from typing import Optional
 
-# Copyright 2023 The HuggingFace Team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-class AttnProcessor2_0:
+# Based on diffusers AttnProcessor2_0 code:
+# - https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py
+# - copyright 2023 The HuggingFace Team,
+# - Apache License 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
+# Modifications by Alex Birch to support regional attention
+class RegionalAttnProcessor:
     r"""
     Processor for implementing scaled dot-product attention (enabled by default if you're using PyTorch 2.0).
     """
