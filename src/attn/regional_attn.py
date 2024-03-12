@@ -46,6 +46,9 @@ class RegionalAttnProcessor:
                 temb=temb,
                 scale=scale,
             )
+        # this attention processor wants full management of attn masking
+        assert attention_mask is None
+
         residual = hidden_states
         if attn.spatial_norm is not None:
             hidden_states = attn.spatial_norm(hidden_states, temb)

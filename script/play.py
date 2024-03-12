@@ -77,6 +77,12 @@ unets: List[UNet2DConditionModel] = [UNet2DConditionModel.from_pretrained(
 base_unet: UNet2DConditionModel = unets[0]
 refiner_unet: Optional[UNet2DConditionModel] = unets[1] if use_refiner else None
 
+modify_xattn = True
+if modify_xattn:
+  regional_attn = RegionalAttnProcessor()
+  for unet in unets:
+    unet.set_attn_processor(regional_attn)
+
 compile = False
 if compile:
   for unet in unets:
