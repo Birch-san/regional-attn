@@ -411,7 +411,7 @@ for quotients, (start_dct, end_dct) in zip(quotients_per_interp, pairwise(keyfra
   end_fadein: FloatTensor = end_dct * endpoint.sin()
   dct_interped: FloatTensor = start_fadeout + end_fadein
 
-  dct_hp_interped: FloatTensor = torch.where(freeze, first_frame_dct, dct_interped)
+  dct_hp_interped: FloatTensor = torch.where(freeze | end_dct.isclose(start_dct), first_frame_dct, dct_interped)
   interp_dcts.append(dct_hp_interped)
 
 # if our end isn't a duplicate of our start, let's render it
