@@ -296,7 +296,8 @@ denoiser_factory_factory: DenoiserFactoryFactory[CFGDenoiser] = lambda delegate:
 base_denoiser_factory: DenoiserFactory[Denoiser] = denoiser_factory_factory(base_unet_k_wrapped)
 refiner_denoiser_factory: Optional[DenoiserFactory[Denoiser]] = denoiser_factory_factory(refiner_unet_k_wrapped) if use_refiner else None
 
-schedule_template = KarrasScheduleTemplate.CudaMasteringMaximizeRefiner
+# schedule_template = KarrasScheduleTemplate.CudaMasteringMaximizeRefiner
+schedule_template = KarrasScheduleTemplate.Mastering
 schedule: KarrasScheduleParams = get_template_schedule(
   schedule_template,
   model_sigma_min=base_unet_k_wrapped.sigma_min,
@@ -355,30 +356,44 @@ latents_shape = LatentsShape(base_unet.config.in_channels, height_lt, width_lt)
 # we generate with CPU random so that results can be reproduced across platforms
 generator = Generator(device='cpu')
 
+def make_noise(ix: int, seed: int) -> List[FloatTensor]:
+  return randn( 
+    (
+      latents_shape.channels,
+      latents_shape.height,
+      latents_shape.width
+    ),
+    dtype=sampling_dtype,
+    device=generator.device,
+    generator=generator.manual_seed(seed),
+  ).to(device)
+def make_rolled_noise(ix: int, seed: int) -> List[FloatTensor]:
+  nominal: FloatTensor = make_noise(ix, seed)
+  # roll rows into new vertical positions
+  rolled = nominal.roll(shifts=(ix,), dims=(-2,))
+  # roll only channels 1 and 2, where we expect colour to be found
+  # https://huggingface.co/blog/TimothyAlexisVass/explaining-the-sdxl-latent-space
+  nominal[1:3,:,:] = rolled[1:3,:,:]
+  return nominal
+
 max_batch_size = 16
 
-betweens = 7
-# betweens = 7
+betweens = 2
 
-loop_keyframes = True
+loop_keyframes = False
+fixed_seed = False
 start_seed = 29
 seed_count = 2
-keyframes: List[int] = list(range(start_seed, start_seed+seed_count))
+
+keyframes: List[int] = [start_seed]*seed_count if fixed_seed else list(range(start_seed, start_seed+seed_count))
 if loop_keyframes:
   keyframes = [*keyframes, start_seed]
 frame_seeds: List[int] = [*[f_seed for k_seed in keyframes[:-1] for f_seed in [k_seed]*betweens], keyframes[-1]]
-noise_keyframes = [randn(
-  (
-    latents_shape.channels,
-    latents_shape.height,
-    latents_shape.width
-  ),
-  dtype=sampling_dtype,
-  device=generator.device,
-  generator=generator.manual_seed(seed),
-).to(device) for seed in keyframes]
-first_frame, *_ = noise_keyframes
-first_frame_dct = dct2(first_frame)
+noise_keyframes: List[FloatTensor] = [make_noise(ix, seed) for ix, seed in enumerate(keyframes)]
+keyframe_dcts_t: FloatTensor = dct2(torch.stack(noise_keyframes))
+keyframe_dcts: List[FloatTensor] = keyframe_dcts_t.unbind()
+del keyframe_dcts_t
+first_frame_dct, *_ = keyframe_dcts
 
 highpass_cutoff = 4
 h_freeze: BoolTensor = torch.arange(latents_shape.height, device=device).unsqueeze(-1) <= highpass_cutoff
@@ -390,10 +405,10 @@ interp_quotients: FloatTensor = linsp[:-1].repeat(len(keyframes)-1)
 quotients_per_interp: List[FloatTensor] = interp_quotients.reshape(-1, 1, 1, 1).split(betweens)
 
 interp_dcts: List[FloatTensor] = []
-for quotients, (start, end) in zip(quotients_per_interp, pairwise(noise_keyframes)):
-  start_dct, end_dct = dct2(torch.stack([start, end]))
-  start_fadeout: FloatTensor = start_dct * (quotients * math.pi * .5).cos()
-  end_fadein: FloatTensor = end_dct * (quotients * math.pi * .5).sin()
+for quotients, (start_dct, end_dct) in zip(quotients_per_interp, pairwise(keyframe_dcts)):
+  endpoint: FloatTensor = quotients * math.pi * .5
+  start_fadeout: FloatTensor = start_dct * endpoint.cos()
+  end_fadein: FloatTensor = end_dct * endpoint.sin()
   dct_interped: FloatTensor = start_fadeout + end_fadein
 
   dct_hp_interped: FloatTensor = torch.where(freeze, first_frame_dct, dct_interped)
@@ -404,11 +419,12 @@ if keyframes[0] != keyframes[-1]:
   # add a 0 quotient to the end of our betweens
   interp_quotients: FloatTensor = pad(interp_quotients, pad=(0, 1), mode='constant')
   # being the final frame, there's no "next frame" to interpolate to
-  dct: FloatTensor = dct2(noise_keyframes[-1])
+  dct: FloatTensor = keyframe_dcts[-1]
   dct_hp: FloatTensor = torch.where(freeze, first_frame_dct, dct)
   interp_dcts.append(dct_hp.unsqueeze(0))
+del keyframe_dcts
 
-noise_frames: Optional[FloatTensor] = idct2(cat(interp_dcts))
+noise_frames: FloatTensor = idct2(cat(interp_dcts))
 
 if not swap_models:
   base_unet.to(device)
