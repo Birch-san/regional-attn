@@ -36,6 +36,7 @@ from src.device_ctx import to_device
 from src.rgb_to_pil import rgb_to_pil
 from src.latents_to_pils import LatentsToBCHW, LatentsToPils, make_latents_to_bchw, make_latents_to_pils
 from src.log_intermediates import LogIntermediatesFactory, LogIntermediates, make_log_intermediates_factory
+from src.attention.regional_attn import RegionalAttnProcessor
 
 logger: Logger = getLogger(__file__)
 
