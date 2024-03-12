@@ -390,7 +390,7 @@ if loop_keyframes:
   keyframes = [*keyframes, start_seed]
 frame_seeds: List[int] = [*[f_seed for k_seed in keyframes[:-1] for f_seed in [k_seed]*betweens], keyframes[-1]]
 noise_keyframes: List[FloatTensor] = [make_noise(ix, seed) for ix, seed in enumerate(keyframes)]
-keyframe_dcts_t: FloatTensor = dct2(torch.stack(noise_keyframes))
+keyframe_dcts_t: FloatTensor = dct2(stack(noise_keyframes))
 keyframe_dcts: List[FloatTensor] = keyframe_dcts_t.unbind()
 del keyframe_dcts_t
 first_frame_dct, *_ = keyframe_dcts
