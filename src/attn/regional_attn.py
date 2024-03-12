@@ -1,7 +1,7 @@
 import torch.nn.functional as F
 from diffusers.models.attention_processor import Attention
 from diffusers.utils import USE_PEFT_BACKEND
-import torch
+from torch import FloatTensor
 from typing import Optional
 
 # Based on diffusers AttnProcessor2_0 code:
@@ -10,10 +10,6 @@ from typing import Optional
 # - Apache License 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
 # Modifications by Alex Birch to support regional attention
 class RegionalAttnProcessor:
-    r"""
-    Processor for implementing scaled dot-product attention (enabled by default if you're using PyTorch 2.0).
-    """
-
     def __init__(self):
         if not hasattr(F, "scaled_dot_product_attention"):
             raise ImportError("AttnProcessor2_0 requires PyTorch 2.0, to use it, please upgrade PyTorch to 2.0.")
@@ -21,12 +17,12 @@ class RegionalAttnProcessor:
     def __call__(
         self,
         attn: Attention,
-        hidden_states: torch.FloatTensor,
-        encoder_hidden_states: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.FloatTensor] = None,
-        temb: Optional[torch.FloatTensor] = None,
+        hidden_states: FloatTensor,
+        encoder_hidden_states: Optional[FloatTensor] = None,
+        attention_mask: Optional[FloatTensor] = None,
+        temb: Optional[FloatTensor] = None,
         scale: float = 1.0,
-    ) -> torch.FloatTensor:
+    ) -> FloatTensor:
         residual = hidden_states
         if attn.spatial_norm is not None:
             hidden_states = attn.spatial_norm(hidden_states, temb)
@@ -58,13 +54,13 @@ class RegionalAttnProcessor:
         elif attn.norm_cross:
             encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
 
-        key = attn.to_k(encoder_hidden_states, *args)
-        value = attn.to_v(encoder_hidden_states, *args)
+        key: FloatTensor = attn.to_k(encoder_hidden_states, *args)
+        value: FloatTensor = attn.to_v(encoder_hidden_states, *args)
 
         inner_dim = key.shape[-1]
         head_dim = inner_dim // attn.heads
 
-        query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+        query: FloatTensor = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
         key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
         value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
@@ -78,10 +74,10 @@ class RegionalAttnProcessor:
         hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
         hidden_states = hidden_states.to(query.dtype)
 
-        # linear proj
-        hidden_states = attn.to_out[0](hidden_states, *args)
-        # dropout
-        hidden_states = attn.to_out[1](hidden_states)
+        out_proj, dropout = attn.to_out
+
+        hidden_states = out_proj(hidden_states, *args)
+        hidden_states = dropout(hidden_states)
 
         if input_ndim == 4:
             hidden_states = hidden_states.transpose(-1, -2).reshape(batch_size, channel, height, width)
