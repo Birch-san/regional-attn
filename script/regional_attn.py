@@ -52,7 +52,7 @@ sampling_dtype = torch.float32
 # if you're on a Mac: don't bother with this; VRAM and RAM are the same thing.
 swap_models = False
 
-use_kohaku = True
+use_kohaku = False
 
 stability_model_name = 'stabilityai/stable-diffusion-xl-base-0.9'
 kohaku_model_name = 'KBlueLeaf/Kohaku-XL-Delta'
@@ -255,10 +255,12 @@ if negative_prompt is None and cfg_scale > 1.:
 # we separate pooled embeds (neg cond, pool cond)
 # from region-specific embeds
 regional_cond_start_ix = 1 if negative_prompt is None or cfg_scale == 1. else 2
-cond_emb: FloatTensor = pooled_embed[regional_cond_start_ix:]
 pooled_embed = pooled_embed[:regional_cond_start_ix]
+# note: though we make the pool emb available for xattn to see, we may choose to ignore it in favour of regional conds
+base_cond_emb: FloatTensor = base_embed[regional_cond_start_ix:]
 base_embed = base_embed[:regional_cond_start_ix]
 if use_refiner:
+  refiner_cond_emb: FloatTensor = refiner_embed[regional_cond_start_ix:]
   refiner_embed = refiner_embed[:regional_cond_start_ix]
 
 base_time_ids: FloatTensor = get_time_ids(
@@ -370,7 +372,9 @@ latents_shape = LatentsShape(base_unet.config.in_channels, height_lt, width_lt)
 modify_xattn = True
 if modify_xattn:
   sample_size = Dimensions(height=latents_shape.height, width=latents_shape.width)
-  for unet in unets:
+  refiner_cond_embs: List[FloatTensor] = [refiner_cond_emb] if use_refiner else []
+  cond_embs: List[FloatTensor] = [base_cond_emb, *refiner_cond_embs]
+  for unet, cond_emb in zip(unets, cond_embs):
     regional_attn_maker: AttnAcceptor = partial(
       make_regional_attn,
       sample_size=sample_size,

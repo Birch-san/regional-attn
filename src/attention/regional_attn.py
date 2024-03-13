@@ -5,6 +5,7 @@ from torch import FloatTensor
 from typing import Optional
 from dataclasses import dataclass
 from einops import rearrange
+import torch
 
 from .attn_processor import AttnProcessor
 from ..dimensions import Dimensions
@@ -36,19 +37,31 @@ class RegionalAttnProcessor(AttnProcessor):
         assert attention_mask is None, "we want full management of attn masking"
         assert hidden_states.ndim == 3, f"Expected a disappointing 3D tensor that I would have the fun job of unflattening. Instead received {hidden_states.ndim}-dimensional tensor."
         assert hidden_states.size(-2) == self.expect_size.height * self.expect_size.width, "Sequence dimension is not equal to the product of expected height and width, so we cannot unflatten sequence into 2D sequence."
-        # print(encoder_hidden_states.shape) [2, 77, 2048]
 
         residual = hidden_states
         if attn.spatial_norm is not None:
             hidden_states = attn.spatial_norm(hidden_states, temb)
 
+        encoder_hidden_states_orig = encoder_hidden_states
+        encoder_hidden_states = encoder_hidden_states_orig.repeat_interleave(self.embs.size(0), dim=-2)
+        for ix, emb in enumerate(self.embs.unbind()):
+            # NOTE: we are assuming that CFG is in use, and that unconds are given before each cond
+            encoder_hidden_states[1::2, 77*ix:77*(ix+1), :] = emb
+
         batch_size, sequence_length, _ = encoder_hidden_states.shape
 
-        if attention_mask is not None:
-            attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
-            # scaled_dot_product_attention expects attention_mask shape to be
-            # (batch, heads, source_length, target_length)
-            attention_mask = attention_mask.view(batch_size, attn.heads, -1, attention_mask.shape[-1])
+        attention_mask = hidden_states.new_ones((batch_size, attn.heads, *(self.expect_size), sequence_length), dtype=torch.bool)
+        # NOTE: we are assuming that CFG is in use, and that unconds are given before each cond
+        # for unconds (0th, 2nd, 4th, …) we don't wish for the uncond to be repeated
+        attention_mask[::2,:,:,:,77:] = 0
+        attention_mask[1::2,:,:,:self.expect_size.width//2,:77] = 0
+        attention_mask[1::2,:,:,self.expect_size.width//2:,77:] = 0
+
+        # if attention_mask is not None:
+        #     attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
+        #     # scaled_dot_product_attention expects attention_mask shape to be
+        #     # (batch, heads, source_length, target_length)
+        #     attention_mask = attention_mask.view(batch_size, attn.heads, -1, attention_mask.shape[-1])
 
         if attn.group_norm is not None:
             hidden_states = attn.group_norm(hidden_states.transpose(1, 2)).transpose(1, 2)
@@ -56,9 +69,7 @@ class RegionalAttnProcessor(AttnProcessor):
         args = () if USE_PEFT_BACKEND else (scale,)
         query = attn.to_q(hidden_states, *args)
 
-        if encoder_hidden_states is None:
-            encoder_hidden_states = hidden_states
-        elif attn.norm_cross:
+        if attn.norm_cross:
             encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
 
         key: FloatTensor = attn.to_k(encoder_hidden_states, *args)
