@@ -182,12 +182,12 @@ force_zeros_for_empty_prompt = True
 uncond_prompt: Optional[str] = None if force_zeros_for_empty_prompt else ''
 
 # negative_prompt: Optional[str] = uncond_prompt
-negative_prompt: Optional[str] = 'low quality, blurry, weird proportions, unrealistic, uninteresting, ugly'
-# negative_prompt: Optional[str] = 'worst quality, low quality, normal quality, old, early, lowres, bad anatomy, blurry, cropped, text, jpeg artifacts, signature, watermark, username, artist name, trademark, title, multiple view, reference sheet, long body, disfigured, ugly, monochrome, transparent background'
-pool_prompt = 'the dragon attacks, masterpiece, dramatic, highly detailed, high dynamic range'
+# negative_prompt: Optional[str] = 'low quality, blurry, weird proportions, unrealistic, uninteresting, ugly'
+negative_prompt: Optional[str] = 'worst quality, low quality, normal quality, old, early, lowres, bad anatomy, blurry, cropped, text, jpeg artifacts, signature, watermark, username, artist name, trademark, title, multiple view, reference sheet, long body, disfigured, ugly, monochrome, transparent background'
+pool_prompt = 'illustration of dragon girl, wings, masterpiece, dramatic, highly detailed, high dynamic range'
 cond_prompts: List[str] = [
-  "the ice dragon attacks on a cold winter's day, masterpiece, dramatic, highly detailed, high dynamic range",
-  'the fire dragon attacks at night, masterpiece, dramatic, highly detailed, high dynamic range',
+  "illustration of ice dragon girl, wings, winter day, masterpiece, dramatic, highly detailed, high dynamic range, watercolor (medium)",
+  'illustration of fire dragon girl, wings, night, masterpiece, dramatic, highly detailed, high dynamic range, aurora borealis',
 ]
 prompts: List[str] = [
   *([] if negative_prompt is None or cfg_scale == 1. else [negative_prompt]),
