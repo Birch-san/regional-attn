@@ -323,7 +323,7 @@ if use_refiner:
   #   0.5692849159240723
   # I assume this corresponds to img2img strength of 0.2
   refine_from_sigma: float = base_unet_k_wrapped.sigmas[199].item()
-  print(f"the highest sigma within the refiner's training was training distribution is: {refine_from_sigma:.4f} ")
+  print(f"the highest sigma within the refiner's training distribution is: {refine_from_sigma:.4f} ")
 
   base_purview: BoolTensor = sigmas>refine_from_sigma
   refiner_purview: BoolTensor = sigmas<=refine_from_sigma
