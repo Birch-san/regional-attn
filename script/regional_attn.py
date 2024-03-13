@@ -52,7 +52,7 @@ sampling_dtype = torch.float32
 # if you're on a Mac: don't bother with this; VRAM and RAM are the same thing.
 swap_models = False
 
-use_kohaku = False
+use_kohaku = True
 
 stability_model_name = 'stabilityai/stable-diffusion-xl-base-0.9'
 kohaku_model_name = 'KBlueLeaf/Kohaku-XL-Delta'
@@ -184,10 +184,10 @@ uncond_prompt: Optional[str] = None if force_zeros_for_empty_prompt else ''
 # negative_prompt: Optional[str] = uncond_prompt
 # negative_prompt: Optional[str] = 'low quality, blurry, weird proportions, unrealistic, uninteresting, ugly'
 negative_prompt: Optional[str] = 'worst quality, low quality, normal quality, old, early, lowres, bad anatomy, blurry, cropped, text, jpeg artifacts, signature, watermark, username, artist name, trademark, title, multiple view, reference sheet, long body, disfigured, ugly, monochrome, transparent background'
-pool_prompt = 'illustration of dragon girl, wings, masterpiece, dramatic, highly detailed, high dynamic range'
+pool_prompt = '1girl, solo, dragon girl, dragon wings, dragon horns, dragon tail, small breasts, masterpiece, newest, absurdres, safe'
 cond_prompts: List[str] = [
-  "illustration of ice dragon girl, wings, winter day, masterpiece, dramatic, highly detailed, high dynamic range, watercolor (medium)",
-  'illustration of fire dragon girl, wings, night, masterpiece, dramatic, highly detailed, high dynamic range, aurora borealis',
+  f'{pool_prompt}, ice, overcast, watercolor (medium), aurora borealis',
+  f'{pool_prompt}, fire, night, marker (medium), smoke',
 ]
 prompts: List[str] = [
   *([] if negative_prompt is None or cfg_scale == 1. else [negative_prompt]),
@@ -312,8 +312,8 @@ denoiser_factory_factory: DenoiserFactoryFactory[CFGDenoiser] = lambda delegate:
 base_denoiser_factory: DenoiserFactory[Denoiser] = denoiser_factory_factory(base_unet_k_wrapped)
 refiner_denoiser_factory: Optional[DenoiserFactory[Denoiser]] = denoiser_factory_factory(refiner_unet_k_wrapped) if use_refiner else None
 
-# schedule_template = KarrasScheduleTemplate.CudaMasteringMaximizeRefiner
-schedule_template = KarrasScheduleTemplate.Mastering
+schedule_template = KarrasScheduleTemplate.CudaMasteringMaximizeRefiner
+# schedule_template = KarrasScheduleTemplate.Mastering
 schedule: KarrasScheduleParams = get_template_schedule(
   schedule_template,
   model_sigma_min=base_unet_k_wrapped.sigma_min,
