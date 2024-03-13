@@ -19,10 +19,16 @@ from ..dimensions import Dimensions
 class RegionalAttnProcessor(AttnProcessor):
     expect_size: Dimensions
     embs: FloatTensor
+    cfg_enabled: bool
+
+    # True =  emb.repeat_interleave [uncond, uncond, cond, cond]
+    # False = emb.repeat            [uncond, cond, uncond, cond]
+    unconds_together: bool
     
     def __post_init__(self):
         if not hasattr(F, "scaled_dot_product_attention"):
             raise ImportError("RegionalAttnProcessor requires PyTorch 2.0, to use it, please upgrade PyTorch to 2.0.")
+        assert self.cfg_enabled, "we only support CFG mode for now"
 
     def __call__(
         self,
@@ -44,24 +50,32 @@ class RegionalAttnProcessor(AttnProcessor):
 
         encoder_hidden_states_orig = encoder_hidden_states
         encoder_hidden_states = encoder_hidden_states_orig.repeat_interleave(self.embs.size(0), dim=-2)
+
+        # NOTE: we assume CFG is in use
+        # typically CFG employs 2 text embeddings (cond, uncond),
+        # but more general formulations such as multi-cond guidance can use more.
+        conds_per_sample = 2
+        cond_start_ix = self.embs.size(0)//conds_per_sample
         for ix, emb in enumerate(self.embs.unbind()):
-            # NOTE: we are assuming that CFG is in use, and that unconds are given before each cond
-            encoder_hidden_states[1::2, 77*ix:77*(ix+1), :] = emb
+            # unconds together:
+            if self.unconds_together:
+                encoder_hidden_states[cond_start_ix:, 77*ix:77*(ix+1), :] = emb
+            else:
+                encoder_hidden_states[cond_start_ix::conds_per_sample, 77*ix:77*(ix+1), :] = emb
 
         batch_size, sequence_length, _ = encoder_hidden_states.shape
 
         attention_mask = hidden_states.new_ones((batch_size, attn.heads, *(self.expect_size), sequence_length), dtype=torch.bool)
-        # NOTE: we are assuming that CFG is in use, and that unconds are given before each cond
-        # for unconds (0th, 2nd, 4th, …) we don't wish for the uncond to be repeated
-        attention_mask[::2,:,:,:,77:] = 0
-        attention_mask[1::2,:,:,:self.expect_size.width//2,:77] = 0
-        attention_mask[1::2,:,:,self.expect_size.width//2:,77:] = 0
-
-        # if attention_mask is not None:
-        #     attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
-        #     # scaled_dot_product_attention expects attention_mask shape to be
-        #     # (batch, heads, source_length, target_length)
-        #     attention_mask = attention_mask.view(batch_size, attn.heads, -1, attention_mask.shape[-1])
+        # NOTE: we assume CFG is in use
+        # for unconds, we don't wish for the uncond to be repeated
+        if self.unconds_together:
+            attention_mask[:cond_start_ix, :,:,:,77:] = 0
+            attention_mask[ cond_start_ix:,:,:,:self.expect_size.width//2, :77] = 0
+            attention_mask[ cond_start_ix:,:,:, self.expect_size.width//2:, 77:] = 0
+        else:
+            attention_mask[::conds_per_sample,:,:,:,77:] = 0
+            attention_mask[cond_start_ix::conds_per_sample,:,:,:self.expect_size.width//2, :77] = 0
+            attention_mask[cond_start_ix::conds_per_sample,:,:, self.expect_size.width//2:, 77:] = 0
 
         if attn.group_norm is not None:
             hidden_states = attn.group_norm(hidden_states.transpose(1, 2)).transpose(1, 2)

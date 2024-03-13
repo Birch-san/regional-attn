@@ -19,6 +19,8 @@ def make_regional_attn(
   level: int,
   sample_size: Dimensions,
   embs: FloatTensor,
+  cfg_enabled: bool,
+  unconds_together: bool,
 ) -> RegionalAttnProcessor:
   downsampled_size = sample_size
   # yes I know about raising 2 to the power of negative number, but I want to model a repeated rounding-down
@@ -29,5 +31,10 @@ def make_regional_attn(
     size_probe = downsample(size_probe)
     height, width = size_probe.shape[1:]
     downsampled_size = Dimensions(height=height, width=width)
-  attn = RegionalAttnProcessor(expect_size=downsampled_size, embs=embs)
+  attn = RegionalAttnProcessor(
+    expect_size=downsampled_size,
+    embs=embs,
+    cfg_enabled=cfg_enabled,
+    unconds_together=unconds_together,
+  )
   return attn
