@@ -55,7 +55,7 @@ class RegionalAttnProcessor(AttnProcessor):
         # typically CFG employs 2 text embeddings (cond, uncond),
         # but more general formulations such as multi-cond guidance can use more.
         conds_per_sample = 2
-        cond_start_ix = self.embs.size(0)//conds_per_sample
+        cond_start_ix = encoder_hidden_states.size(0)//conds_per_sample
         for ix, emb in enumerate(self.embs.unbind()):
             # unconds together:
             if self.unconds_together:
