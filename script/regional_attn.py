@@ -182,12 +182,17 @@ force_zeros_for_empty_prompt = True
 uncond_prompt: Optional[str] = None if force_zeros_for_empty_prompt else ''
 
 # negative_prompt: Optional[str] = uncond_prompt
-# negative_prompt: Optional[str] = 'low quality, blurry, weird proportions, weird eyes, disfigured hands, bad anatomy, unrealistic, uninteresting, ugly'
-negative_prompt: Optional[str] = 'worst quality, low quality, normal quality, old, early, lowres, bad anatomy, blurry, cropped, text, jpeg artifacts, signature, watermark, username, artist name, trademark, title, multiple view, reference sheet, long body, disfigured, ugly, monochrome, transparent background'
-prompt: str = 'photo of absolute power, grand celestial woman'
+negative_prompt: Optional[str] = 'low quality, blurry, weird proportions, unrealistic, uninteresting, ugly'
+# negative_prompt: Optional[str] = 'worst quality, low quality, normal quality, old, early, lowres, bad anatomy, blurry, cropped, text, jpeg artifacts, signature, watermark, username, artist name, trademark, title, multiple view, reference sheet, long body, disfigured, ugly, monochrome, transparent background'
+pool_prompt = 'the dragon attacks, masterpiece, dramatic, highly detailed, high dynamic range'
+cond_prompts: List[str] = [
+  "the ice dragon attacks on a cold winter's day, masterpiece, dramatic, highly detailed, high dynamic range",
+  'the fire dragon attacks at night, masterpiece, dramatic, highly detailed, high dynamic range',
+]
 prompts: List[str] = [
   *([] if negative_prompt is None or cfg_scale == 1. else [negative_prompt]),
-  prompt,
+  pool_prompt,
+  *cond_prompts,
 ]
 
 tokenizeds: List[BatchEncoding] = [tokenizer(
@@ -246,6 +251,15 @@ if negative_prompt is None and cfg_scale > 1.:
 
   if use_refiner:
     refiner_embed = pad(refiner_embed, pad=(0,0, 0,0, 1,0), mode='constant')
+
+# we separate pooled embeds (neg cond, pool cond)
+# from region-specific embeds
+regional_cond_start_ix = 1 if negative_prompt is None or cfg_scale == 1. else 2
+cond_emb: FloatTensor = pooled_embed[regional_cond_start_ix:]
+pooled_embed = pooled_embed[:regional_cond_start_ix]
+base_embed = base_embed[:regional_cond_start_ix]
+if use_refiner:
+  refiner_embed = refiner_embed[:regional_cond_start_ix]
 
 base_time_ids: FloatTensor = get_time_ids(
   original_size=original_size,
@@ -360,7 +374,7 @@ if modify_xattn:
     regional_attn_maker: AttnAcceptor = partial(
       make_regional_attn,
       sample_size=sample_size,
-      embs=,
+      embs=cond_emb,
     )
     attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=regional_attn_maker)
     visit_receipt = visit_attns(unet, levels=len(unet.down_blocks)+1, attn_acceptor=attn_setter, self_attn=False, xattn=True)
@@ -403,7 +417,7 @@ for batch_ix, batch_seeds in enumerate(batched(seeds, max_batch_size)):
   latents *= start_sigma
 
   out_stems: List[str] = [
-    f'{(next_ix + batch_ix*max_batch_size + sample_ix):05d}_{img_provenance}_{prompt.split(",")[0]}_{seed}'
+    f'{(next_ix + batch_ix*max_batch_size + sample_ix):05d}_{img_provenance}_{pool_prompt.split(",")[0]}_{seed}'
     for sample_ix, seed in enumerate(batch_seeds)
   ]
 
