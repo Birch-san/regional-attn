@@ -381,6 +381,7 @@ if modify_xattn:
       embs=cond_emb,
       cfg_enabled=True,
       unconds_together=True,
+      region_strategy='hsplit',
     )
     attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=regional_attn_maker)
     visit_receipt = visit_attns(unet, levels=len(unet.down_blocks)+1, attn_acceptor=attn_setter, self_attn=False, xattn=True)

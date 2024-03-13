@@ -2,13 +2,22 @@ import torch.nn.functional as F
 from diffusers.models.attention_processor import Attention
 from diffusers.utils import USE_PEFT_BACKEND
 from torch import FloatTensor
-from typing import Optional
+from typing import Optional, Literal, List
 from dataclasses import dataclass
 from einops import rearrange
 import torch
+import numpy as np
+from numpy.typing import NDArray
 
 from .attn_processor import AttnProcessor
 from ..dimensions import Dimensions
+
+# by oobug
+# License: CC BY-SA 4.0
+# https://stackoverflow.com/a/75303062/5257399
+def even_divide(num: int, div: int) -> List[int]:
+    groupSize, remainder = divmod(num, div)
+    return [groupSize + (1 if x < remainder else 0) for x in range(div)]
 
 # Based on diffusers AttnProcessor2_0 code:
 # - https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py
@@ -24,6 +33,8 @@ class RegionalAttnProcessor(AttnProcessor):
     # True =  emb.repeat_interleave [uncond, uncond, cond, cond]
     # False = emb.repeat            [uncond, cond, uncond, cond]
     unconds_together: bool
+
+    region_strategy: Literal['hsplit', 'vsplit']
     
     def __post_init__(self):
         if not hasattr(F, "scaled_dot_product_attention"):
@@ -57,7 +68,6 @@ class RegionalAttnProcessor(AttnProcessor):
         conds_per_sample = 2
         cond_start_ix = encoder_hidden_states.size(0)//conds_per_sample
         for ix, emb in enumerate(self.embs.unbind()):
-            # unconds together:
             if self.unconds_together:
                 encoder_hidden_states[cond_start_ix:, 77*ix:77*(ix+1), :] = emb
             else:
@@ -66,16 +76,32 @@ class RegionalAttnProcessor(AttnProcessor):
         batch_size, sequence_length, _ = encoder_hidden_states.shape
 
         attention_mask = hidden_states.new_ones((batch_size, attn.heads, *(self.expect_size), sequence_length), dtype=torch.bool)
-        # NOTE: we assume CFG is in use
-        # for unconds, we don't wish for the uncond to be repeated
+        match self.region_strategy:
+            case 'hsplit':
+                canvas_length = self.expect_size.width
+            case 'vsplit':
+                canvas_length = self.expect_size.height
+        pix_splits: List[int] = even_divide(canvas_length, self.embs.size(0))
+        pix_lens: NDArray = np.array(pix_splits)
+        pix_indices: NDArray = np.cumsum(pix_lens)-pix_lens[0]
         if self.unconds_together:
+            # hide the repeated uncond
             attention_mask[:cond_start_ix, :,:,:,77:] = 0
-            attention_mask[ cond_start_ix:,:,:,:self.expect_size.width//2, :77] = 0
-            attention_mask[ cond_start_ix:,:,:, self.expect_size.width//2:, 77:] = 0
+            for prompt_ix, (pix_start, pix_len) in enumerate(zip(pix_indices, pix_lens)):
+                match self.region_strategy:
+                    case 'hsplit':
+                        attention_mask[cond_start_ix:,:,:,pix_start:pix_start+pix_len,77*prompt_ix:77*(prompt_ix+1)] = 0
+                    case 'vsplit':
+                        attention_mask[cond_start_ix:,:,pix_start:pix_start+pix_len,:,:77*prompt_ix:77*(prompt_ix+1)] = 0
         else:
+            # hide the repeated uncond
             attention_mask[::conds_per_sample,:,:,:,77:] = 0
-            attention_mask[cond_start_ix::conds_per_sample,:,:,:self.expect_size.width//2, :77] = 0
-            attention_mask[cond_start_ix::conds_per_sample,:,:, self.expect_size.width//2:, 77:] = 0
+            for prompt_ix, (pix_start, pix_len) in enumerate(zip(pix_indices, pix_lens)):
+                match self.region_strategy:
+                    case 'hsplit':
+                        attention_mask[cond_start_ix::conds_per_sample,:,:,pix_start:pix_start+pix_len,77*prompt_ix:77*(prompt_ix+1)] = 0
+                    case 'vsplit':
+                        attention_mask[cond_start_ix::conds_per_sample,:,pix_start:pix_start+pix_len,:,77*prompt_ix:77*(prompt_ix+1)] = 0
 
         if attn.group_norm is not None:
             hidden_states = attn.group_norm(hidden_states.transpose(1, 2)).transpose(1, 2)
