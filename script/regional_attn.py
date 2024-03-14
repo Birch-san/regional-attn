@@ -10,7 +10,7 @@ from torch import BoolTensor, FloatTensor, LongTensor, Generator, inference_mode
 from torch.nn.functional import pad
 from typing import List, Union, Optional, Callable, Dict, Any
 from logging import getLogger, Logger
-from k_diffusion.sampling import get_sigmas_karras, sample_dpmpp_2m
+from k_diffusion.sampling import get_sigmas_karras, sample_dpmpp_2m, sample_dpmpp_3m_sde, BrownianTreeNoiseSampler
 from os import makedirs, listdir
 from os.path import join
 import fnmatch
@@ -479,14 +479,23 @@ for batch_ix, batch_seeds in enumerate(batched(seeds, max_batch_size)):
   else:
     denoiser: Denoiser = base_denoiser
 
+  noise_sampler = BrownianTreeNoiseSampler(
+    latents,
+    sigma_min=sigma_min,
+    sigma_max=start_sigma,
+    seed=batch_seeds,
+  )
+
   tic: float = perf_counter()
 
   with inference_mode(), to_device(base_unet, device) if swap_models else nullcontext():
-    denoised_latents: FloatTensor = sample_dpmpp_2m(
+    # denoised_latents: FloatTensor = sample_dpmpp_2m(
+    denoised_latents: FloatTensor = sample_dpmpp_3m_sde(
       denoiser,
       latents,
       sigmas,
       callback=callback,
+      noise_sampler=noise_sampler,
     ).to(vae_dtype)
 
   if profile:
