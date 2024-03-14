@@ -22,6 +22,7 @@ class KarrasScheduleTemplate(Enum):
   Science = auto()
   # high-quality, for not-potato PC
   CudaMastering = auto()
+  Mastering32 = auto()
   # increase rho slightly to include a sigmas 0.5692849159240723
   CudaMasteringMaximizeRefiner = auto()
   # silly number of steps, for scientific demonstrations
@@ -59,6 +60,13 @@ def get_template_schedule(
     case KarrasScheduleTemplate.CudaMastering:
       return KarrasScheduleParams(
         steps=25,
+        sigma_max=model_sigma_max,
+        sigma_min=model_sigma_min,
+        rho=7.
+      )
+    case KarrasScheduleTemplate.Mastering32:
+      return KarrasScheduleParams(
+        steps=32,
         sigma_max=model_sigma_max,
         sigma_min=model_sigma_min,
         rho=7.

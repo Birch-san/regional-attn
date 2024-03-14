@@ -320,7 +320,8 @@ refiner_denoiser_factory: Optional[DenoiserFactory[Denoiser]] = denoiser_factory
 
 # schedule_template = KarrasScheduleTemplate.CudaMasteringMaximizeRefiner
 # schedule_template = KarrasScheduleTemplate.CudaMastering
-schedule_template = KarrasScheduleTemplate.Mastering
+schedule_template = KarrasScheduleTemplate.Mastering32
+# schedule_template = KarrasScheduleTemplate.Mastering
 schedule: KarrasScheduleParams = get_template_schedule(
   schedule_template,
   model_sigma_min=base_unet_k_wrapped.sigma_min,
