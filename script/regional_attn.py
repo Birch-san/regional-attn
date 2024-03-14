@@ -484,6 +484,9 @@ for batch_ix, batch_seeds in enumerate(batched(seeds, max_batch_size)):
     sigma_min=sigma_min,
     sigma_max=start_sigma,
     seed=batch_seeds,
+    # perhaps we should have the dispatch denoiser send the sigma_to_t to the relevant denoiser for the given sigma,
+    # but since ensembling relies on the denoisers' agreeing to the same time schedule, we can probably ignore that detail.
+    transform=lambda sigma: base_unet_k_wrapped.sigma_to_t(sigma),
   )
 
   tic: float = perf_counter()
