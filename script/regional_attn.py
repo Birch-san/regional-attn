@@ -147,7 +147,10 @@ def round_down(num: int, divisor: int) -> int:
 area = 1024**2
 # SDXL's aspect-ratio bucketing trained on multiple-of-64 side lengths with close-to-1024**2 area
 # width_px: int = round_down(1024, 64)
-width_px: int = round_down(832, 64)
+# width_px: int = round_down(832, 64)
+width_px: int = round_down(1216, 64)
+# width_px: int = round_down(1280, 64)
+# width_px: int = round_down(1344, 64)
 height_px: int = round_down(area//width_px, 64)
 width_lt: int = width_px // vae_resample_factor
 height_lt: int = height_px // vae_resample_factor
@@ -184,8 +187,11 @@ uncond_prompt: Optional[str] = None if force_zeros_for_empty_prompt else ''
 # negative_prompt: Optional[str] = uncond_prompt
 # negative_prompt: Optional[str] = 'low quality, blurry, weird proportions, unrealistic, uninteresting, ugly'
 negative_prompt: Optional[str] = 'worst quality, low quality, normal quality, old, early, lowres, bad anatomy, blurry, cropped, text, jpeg artifacts, signature, watermark, username, artist name, trademark, title, multiple view, reference sheet, long body, disfigured, ugly, monochrome, transparent background'
+# pool_prompt = f'digital painting of dragon girl, wings, masterpiece, dramatic, highly detailed, high dynamic range'
 pool_prompt = 'illustration of dragon girl, wings, masterpiece, dramatic, highly detailed, high dynamic range'
+# pool_prompt = 'dragon girl, wings, masterpiece, dramatic, highly detailed, high dynamic range'
 cond_prompts: List[str] = [
+  'illustration of sakura tree in full bloom, petals falling, spring day, calm sky, rolling hills, grass, flowers masterpiece, dramatic, highly detailed, high dynamic range',
   "illustration of ice dragon girl, wings, winter day, masterpiece, dramatic, highly detailed, high dynamic range, watercolor (medium)",
   'illustration of fire dragon girl, wings, night, masterpiece, dramatic, highly detailed, high dynamic range, aurora borealis',
 ]
@@ -313,7 +319,8 @@ base_denoiser_factory: DenoiserFactory[Denoiser] = denoiser_factory_factory(base
 refiner_denoiser_factory: Optional[DenoiserFactory[Denoiser]] = denoiser_factory_factory(refiner_unet_k_wrapped) if use_refiner else None
 
 # schedule_template = KarrasScheduleTemplate.CudaMasteringMaximizeRefiner
-schedule_template = KarrasScheduleTemplate.Mastering
+schedule_template = KarrasScheduleTemplate.CudaMastering
+# schedule_template = KarrasScheduleTemplate.Mastering
 schedule: KarrasScheduleParams = get_template_schedule(
   schedule_template,
   model_sigma_min=base_unet_k_wrapped.sigma_min,
@@ -391,7 +398,9 @@ if modify_xattn:
 generator = Generator(device='cpu')
 
 max_batch_size = 8
-
+# start_seed = 29
+# start_seed = 30
+start_seed = 36
 start_seed = 29
 sample_count = 1
 seeds = range(start_seed, start_seed+sample_count)
@@ -499,6 +508,7 @@ for batch_ix, batch_seeds in enumerate(batched(seeds, max_batch_size)):
       sigmas,
       callback=callback,
       noise_sampler=noise_sampler,
+      # eta=0.5,
     ).to(vae_dtype)
 
   if profile:
