@@ -6,7 +6,9 @@ from transformers import CLIPPreTrainedModel, CLIPTextModel, CLIPTextModelWithPr
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.models.clip.modeling_clip import CLIPTextModelOutput
 import torch
-from torch import BoolTensor, FloatTensor, LongTensor, Generator, inference_mode, cat, randn, tensor, stack
+from torch import BoolTensor, FloatTensor, LongTensor, ByteTensor, Generator, inference_mode, cat, randn, tensor, stack
+from torchvision.io import read_image
+from torchvision.transforms.functional import pil_to_tensor
 from torch.nn.functional import pad
 from typing import List, Union, Optional, Callable, Dict, Any
 from logging import getLogger, Logger
@@ -184,14 +186,32 @@ force_zeros_for_empty_prompt = True
 
 uncond_prompt: Optional[str] = None if force_zeros_for_empty_prompt else ''
 
+def read_bitmask(path: str) -> BoolTensor:
+  with Image.open(path) as mask_pil:
+    m: ByteTensor = pil_to_tensor(mask_pil)
+  return m.bool().squeeze(0)
+
+# masks: Optional[BoolTensor] = None
+masks: BoolTensor = torch.stack([read_bitmask(path) for path in [
+  'input/blob0.png',
+  'input/blob1.png',
+  'input/blob2.png',
+]]).to(device)
+
 # negative_prompt: Optional[str] = uncond_prompt
 # negative_prompt: Optional[str] = 'low quality, blurry, weird proportions, unrealistic, uninteresting, ugly'
 negative_prompt: Optional[str] = 'worst quality, low quality, normal quality, old, early, lowres, bad anatomy, blurry, cropped, text, jpeg artifacts, signature, watermark, username, artist name, trademark, title, multiple view, reference sheet, long body, disfigured, ugly, monochrome, transparent background'
+# negative_prompt: Optional[str] = 'worst quality, low quality, blurry, lowres'
 # pool_prompt = f'digital painting of dragon girl, wings, masterpiece, dramatic, highly detailed, high dynamic range'
-pool_prompt = 'illustration of dragon girl, wings, masterpiece, dramatic, highly detailed, high dynamic range'
 # pool_prompt = 'dragon girl, wings, masterpiece, dramatic, highly detailed, high dynamic range'
+pool_prompt = 'illustration of dragon girl, wings, masterpiece, dramatic, highly detailed, high dynamic range'
+# pool_prompt = 'empty acacia wood platter, presented on dining table in natural light, ambient occlusion, cinematic, peaceful'
+# pool_prompt = 'empty bamboo wood platter, presented on dining table in natural light, ambient occlusion, cinematic, peaceful'
 cond_prompts: List[str] = [
-  'illustration of sakura tree in full bloom, petals falling, spring day, calm sky, rolling hills, grass, flowers masterpiece, dramatic, highly detailed, high dynamic range',
+  # 'battenberg on acacia wood platter',
+  # 'fairy cake on acacia wood platter',
+  # 'macaron on acacia wood platter',
+  # 'illustration of sakura tree in full bloom, petals falling, spring day, calm sky, rolling hills, grass, flowers masterpiece, dramatic, highly detailed, high dynamic range',
   "illustration of ice dragon girl, wings, winter day, masterpiece, dramatic, highly detailed, high dynamic range, watercolor (medium)",
   'illustration of fire dragon girl, wings, night, masterpiece, dramatic, highly detailed, high dynamic range, aurora borealis',
 ]
@@ -320,6 +340,7 @@ refiner_denoiser_factory: Optional[DenoiserFactory[Denoiser]] = denoiser_factory
 
 # schedule_template = KarrasScheduleTemplate.CudaMasteringMaximizeRefiner
 schedule_template = KarrasScheduleTemplate.CudaMastering
+# schedule_template = KarrasScheduleTemplate.Searching
 # schedule_template = KarrasScheduleTemplate.Mastering32
 # schedule_template = KarrasScheduleTemplate.Mastering
 schedule: KarrasScheduleParams = get_template_schedule(
@@ -387,9 +408,11 @@ if modify_xattn:
       make_regional_attn,
       sample_size=sample_size,
       embs=cond_emb,
+      masks=masks,
       cfg_enabled=True,
       unconds_together=True,
       region_strategy='hsplit',
+      # region_strategy='mask',
     )
     attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=regional_attn_maker)
     visit_receipt = visit_attns(unet, levels=len(unet.down_blocks)+1, attn_acceptor=attn_setter, self_attn=False, xattn=True)

@@ -10,7 +10,15 @@
       "name": "Python: high-pass interp",
       "type": "debugpy",
       "request": "launch",
-      "module": "script.hp_interp"
+      "module": "script.hp_interp",
+      "justMyCode": false,
+    },
+    {
+      "name": "Python: regional attn",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "script.regional_attn",
+      "justMyCode": false,
     },
   ]
 }

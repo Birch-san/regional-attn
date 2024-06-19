@@ -1,6 +1,6 @@
 from diffusers.models.attention import Attention
-from typing import Protocol, Literal
-from torch import FloatTensor
+from typing import Protocol, Literal, Optional
+from torch import FloatTensor, BoolTensor
 import torch
 from .attn_processor import AttnProcessor
 from .regional_attn import RegionalAttnProcessor
@@ -19,6 +19,7 @@ def make_regional_attn(
   level: int,
   sample_size: Dimensions,
   embs: FloatTensor,
+  masks: Optional[BoolTensor],
   cfg_enabled: bool,
   unconds_together: bool,
   region_strategy: Literal['hsplit', 'vsplit'],
@@ -35,6 +36,7 @@ def make_regional_attn(
   attn = RegionalAttnProcessor(
     expect_size=downsampled_size,
     embs=embs,
+    masks=masks,
     cfg_enabled=cfg_enabled,
     unconds_together=unconds_together,
     region_strategy=region_strategy,
