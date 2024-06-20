@@ -1,6 +1,7 @@
 from diffusers.models.attention import Attention
 from typing import Protocol, Literal, Optional
 from torch import FloatTensor, BoolTensor
+from torch.nn.functional import interpolate
 import torch
 from .attn_processor import AttnProcessor
 from .regional_attn import RegionalAttnProcessor
@@ -33,6 +34,7 @@ def make_regional_attn(
     size_probe = downsample(size_probe)
     height, width = size_probe.shape[1:]
     downsampled_size = Dimensions(height=height, width=width)
+  masks = interpolate(masks.unsqueeze(1).half(), size=downsampled_size, mode='nearest').bool().squeeze(1)
   attn = RegionalAttnProcessor(
     expect_size=downsampled_size,
     embs=embs,

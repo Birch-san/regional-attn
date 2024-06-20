@@ -8,6 +8,7 @@ from einops import rearrange
 import torch
 import numpy as np
 from numpy.typing import NDArray
+from enum import Enum
 
 from .attn_processor import AttnProcessor
 from ..dimensions import Dimensions
@@ -18,6 +19,11 @@ from ..dimensions import Dimensions
 def even_divide(num: int, div: int) -> List[int]:
     groupSize, remainder = divmod(num, div)
     return [groupSize + (1 if x < remainder else 0) for x in range(div)]
+
+class RegionStrategy(str, Enum):
+    HSplit = 'hsplit'
+    VSplit = 'vsplit'
+    Mask = 'mask'
 
 # Based on diffusers AttnProcessor2_0 code:
 # - https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py
@@ -35,7 +41,7 @@ class RegionalAttnProcessor(AttnProcessor):
     # False = emb.repeat            [uncond, cond, uncond, cond]
     unconds_together: bool
 
-    region_strategy: Literal['hsplit', 'vsplit', 'manual']
+    region_strategy: RegionStrategy
     
     def __post_init__(self):
         if not hasattr(F, "scaled_dot_product_attention"):
@@ -78,38 +84,55 @@ class RegionalAttnProcessor(AttnProcessor):
 
         attention_mask = hidden_states.new_ones((batch_size, attn.heads, *(self.expect_size), sequence_length), dtype=torch.bool)
         match self.region_strategy:
-            case 'hsplit':
-                canvas_length = self.expect_size.width
-            case 'vsplit':
-                canvas_length = self.expect_size.height
-        pix_splits: List[int] = even_divide(canvas_length, self.embs.size(0))
-        pix_lens: NDArray = np.array(pix_splits)
-        pix_indices: NDArray = np.roll(np.cumsum(pix_lens),1)
-        pix_indices[0] = 0
-        if self.unconds_together:
-            # hide the repeated uncond
-            attention_mask[:cond_start_ix, :,:,:,77:] = 0
-            # start by hiding all conds
-            attention_mask[cond_start_ix:,:,:,:,:] = 0
-            for prompt_ix, (pix_start, pix_len) in enumerate(zip(pix_indices, pix_lens)):
-                # reveal just relevant cond
+            case RegionStrategy.HSplit | RegionStrategy.VSplit:
                 match self.region_strategy:
-                    case 'hsplit':
-                        attention_mask[cond_start_ix:,:,:,pix_start:pix_start+pix_len,77*prompt_ix:77*(prompt_ix+1)] = 1
-                    case 'vsplit':
-                        attention_mask[cond_start_ix:,:,pix_start:pix_start+pix_len,:,:77*prompt_ix:77*(prompt_ix+1)] = 1
-        else:
-            # hide the repeated uncond
-            attention_mask[::conds_per_sample,:,:,:,77:] = 0
-            # start by hiding all conds
-            attention_mask[cond_start_ix::conds_per_sample,:,:,:,:] = 0
-            for prompt_ix, (pix_start, pix_len) in enumerate(zip(pix_indices, pix_lens)):
-                # reveal just relevant cond
-                match self.region_strategy:
-                    case 'hsplit':
-                        attention_mask[cond_start_ix::conds_per_sample,:,:,pix_start:pix_start+pix_len,77*prompt_ix:77*(prompt_ix+1)] = 1
-                    case 'vsplit':
-                        attention_mask[cond_start_ix::conds_per_sample,:,pix_start:pix_start+pix_len,:,77*prompt_ix:77*(prompt_ix+1)] = 1
+                    case RegionStrategy.HSplit:
+                        canvas_length = self.expect_size.width
+                    case RegionStrategy.VSplit:
+                        canvas_length = self.expect_size.height
+                pix_splits: List[int] = even_divide(canvas_length, self.embs.size(0))
+                pix_lens: NDArray = np.array(pix_splits)
+                pix_indices: NDArray = np.roll(np.cumsum(pix_lens),1)
+                pix_indices[0] = 0
+                if self.unconds_together:
+                    # hide the repeated uncond
+                    attention_mask[:cond_start_ix, :,:,:,77:] = 0
+                    # start by hiding all conds
+                    attention_mask[cond_start_ix:,:,:,:,:] = 0
+                    for prompt_ix, (pix_start, pix_len) in enumerate(zip(pix_indices, pix_lens)):
+                        # reveal just relevant cond
+                        match self.region_strategy:
+                            case RegionStrategy.HSplit:
+                                attention_mask[cond_start_ix:,:,:,pix_start:pix_start+pix_len,77*prompt_ix:77*(prompt_ix+1)] = 1
+                            case RegionStrategy.VSplit:
+                                attention_mask[cond_start_ix:,:,pix_start:pix_start+pix_len,:,:77*prompt_ix:77*(prompt_ix+1)] = 1
+                else:
+                    # hide the repeated uncond
+                    attention_mask[::conds_per_sample,:,:,:,77:] = 0
+                    # start by hiding all conds
+                    attention_mask[cond_start_ix::conds_per_sample,:,:,:,:] = 0
+                    for prompt_ix, (pix_start, pix_len) in enumerate(zip(pix_indices, pix_lens)):
+                        # reveal just relevant cond
+                        match self.region_strategy:
+                            case RegionStrategy.HSplit:
+                                attention_mask[cond_start_ix::conds_per_sample,:,:,pix_start:pix_start+pix_len,77*prompt_ix:77*(prompt_ix+1)] = 1
+                            case RegionStrategy.VSplit:
+                                attention_mask[cond_start_ix::conds_per_sample,:,pix_start:pix_start+pix_len,:,77*prompt_ix:77*(prompt_ix+1)] = 1
+            case RegionStrategy.Mask:
+                if self.unconds_together:
+                    # hide the repeated uncond
+                    attention_mask[:cond_start_ix, :,:,:,77:] = 0
+                    # start by hiding all conds
+                    attention_mask[cond_start_ix:,:,:,:,:] = 0
+                    # attention_mask[cond_start_ix:,:,:,pix_start:pix_start+pix_len,77*prompt_ix:77*(prompt_ix+1)] = 1
+                    # attention_mask[cond_start_ix:,:,:,:,:] = self.masks.unsqueeze(1).unsqueeze(1).unsqueeze(1)
+                    attention_mask[cond_start_ix:].unflatten(-1, (-1, 77)).copy_(rearrange(self.masks, 'b h w -> 1 1 h w b 1').contiguous())
+                else:
+                    # hide the repeated uncond
+                    attention_mask[::conds_per_sample,:,:,:,77:] = 0
+                    # start by hiding all conds
+                    attention_mask[cond_start_ix::conds_per_sample,:,:,:,:] = 0
+                    attention_mask[cond_start_ix::conds_per_sample].unflatten(-1, (-1, 77)).copy_(rearrange(self.masks, 'b h w -> 1 1 h w b 1').contiguous())
 
         if attn.group_norm is not None:
             hidden_states = attn.group_norm(hidden_states.transpose(1, 2)).transpose(1, 2)

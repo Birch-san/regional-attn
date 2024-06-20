@@ -192,28 +192,48 @@ def read_bitmask(path: str) -> BoolTensor:
   return m.bool().squeeze(0)
 
 # masks: Optional[BoolTensor] = None
-masks: BoolTensor = torch.stack([read_bitmask(path) for path in [
-  'input/blob0.png',
-  'input/blob1.png',
-  'input/blob2.png',
+bitmasks: BoolTensor = torch.stack([read_bitmask(path) for path in [
+  'input/blob-bigger-0.png',
+  'input/blob-bigger-1.png',
+  'input/blob-bigger-2.png',
 ]]).to(device)
+nor_mask = ~(bitmasks.any(0))
+pool_mask = torch.ones_like(bitmasks[0])
+masks: BoolTensor = torch.cat([
+  # could also do a pool_mask for stuff we want to apply across the board, or just more protection against NaN (i.e. if a certain pixel is not revealed by any mask, which could happen due to bad downsampling)
+  nor_mask.unsqueeze(0),
+  # pool_mask.unsqueeze(0),
+  bitmasks,
+])
 
 # negative_prompt: Optional[str] = uncond_prompt
-# negative_prompt: Optional[str] = 'low quality, blurry, weird proportions, unrealistic, uninteresting, ugly'
-negative_prompt: Optional[str] = 'worst quality, low quality, normal quality, old, early, lowres, bad anatomy, blurry, cropped, text, jpeg artifacts, signature, watermark, username, artist name, trademark, title, multiple view, reference sheet, long body, disfigured, ugly, monochrome, transparent background'
+negative_prompt: Optional[str] = 'low quality, blurry, weird proportions, unrealistic, uninteresting, ugly'
+# negative_prompt: Optional[str] = 'worst quality, low quality, normal quality, old, early, lowres, bad anatomy, blurry, cropped, text, jpeg artifacts, signature, watermark, username, artist name, trademark, title, multiple view, reference sheet, long body, disfigured, ugly, monochrome, transparent background'
 # negative_prompt: Optional[str] = 'worst quality, low quality, blurry, lowres'
 # pool_prompt = f'digital painting of dragon girl, wings, masterpiece, dramatic, highly detailed, high dynamic range'
 # pool_prompt = 'dragon girl, wings, masterpiece, dramatic, highly detailed, high dynamic range'
-pool_prompt = 'illustration of dragon girl, wings, masterpiece, dramatic, highly detailed, high dynamic range'
-# pool_prompt = 'empty acacia wood platter, presented on dining table in natural light, ambient occlusion, cinematic, peaceful'
+# pool_prompt = 'illustration of dragon girl, wings, masterpiece, dramatic, highly detailed, high dynamic range'
+# pool_prompt = 'acacia wood platter, presented on dining table in natural light, ambient occlusion, cinematic, peaceful'
+pool_prompt = 'illustration of dragons fighting in a fantasy battleground'
+nor_prompt = 'illustration of a fantasy battleground'
 # pool_prompt = 'empty bamboo wood platter, presented on dining table in natural light, ambient occlusion, cinematic, peaceful'
 cond_prompts: List[str] = [
+  nor_prompt,
+  # pool_prompt,
   # 'battenberg on acacia wood platter',
-  # 'fairy cake on acacia wood platter',
   # 'macaron on acacia wood platter',
+  # 'key',
+  # 'rock',
+  # 'cake',
+  # 'macaron on acacia wood platter',
+  # 'fire',
+  # 'macaron',
+  'illustration of ice dragon fighting in a fantasy battleground',
+  'illustration of fire dragon fighting in a fantasy battleground',
+  'illustration of lightning dragon fighting in a fantasy battleground',
   # 'illustration of sakura tree in full bloom, petals falling, spring day, calm sky, rolling hills, grass, flowers masterpiece, dramatic, highly detailed, high dynamic range',
-  "illustration of ice dragon girl, wings, winter day, masterpiece, dramatic, highly detailed, high dynamic range, watercolor (medium)",
-  'illustration of fire dragon girl, wings, night, masterpiece, dramatic, highly detailed, high dynamic range, aurora borealis',
+  # "illustration of ice dragon girl, wings, winter day, masterpiece, dramatic, highly detailed, high dynamic range, watercolor (medium)",
+  # 'illustration of fire dragon girl, wings, night, masterpiece, dramatic, highly detailed, high dynamic range, aurora borealis',
 ]
 prompts: List[str] = [
   *([] if negative_prompt is None or cfg_scale == 1. else [negative_prompt]),
@@ -411,8 +431,8 @@ if modify_xattn:
       masks=masks,
       cfg_enabled=True,
       unconds_together=True,
-      region_strategy='hsplit',
-      # region_strategy='mask',
+      # region_strategy='hsplit',
+      region_strategy='mask',
     )
     attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=regional_attn_maker)
     visit_receipt = visit_attns(unet, levels=len(unet.down_blocks)+1, attn_acceptor=attn_setter, self_attn=False, xattn=True)
