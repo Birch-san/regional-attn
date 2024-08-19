@@ -34,7 +34,7 @@ def make_regional_attn(
     size_probe = downsample(size_probe)
     height, width = size_probe.shape[1:]
     downsampled_size = Dimensions(height=height, width=width)
-  masks = interpolate(masks.unsqueeze(1).half(), size=downsampled_size, mode='nearest').bool().squeeze(1)
+  masks = None if masks is None else interpolate(masks.unsqueeze(1).half(), size=downsampled_size, mode='nearest').bool().squeeze(1)
   attn = RegionalAttnProcessor(
     expect_size=downsampled_size,
     embs=embs,
