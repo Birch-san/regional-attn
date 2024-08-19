@@ -4,7 +4,8 @@
       "name": "Python: Play",
       "type": "debugpy",
       "request": "launch",
-      "module": "script.play"
+      "module": "script.play",
+      "justMyCode": false,
     },
     {
       "name": "Python: high-pass interp",

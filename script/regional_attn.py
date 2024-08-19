@@ -195,7 +195,7 @@ def read_bitmask(path: str) -> BoolTensor:
 bitmasks: BoolTensor = torch.stack([read_bitmask(path) for path in [
   'input/blob-bigger-0.png',
   'input/blob-bigger-1.png',
-  'input/blob-bigger-2.png',
+  'input/blob-bigger-2.1.png',
 ]]).to(device)
 nor_mask = ~(bitmasks.any(0))
 pool_mask = torch.ones_like(bitmasks[0])
@@ -207,6 +207,7 @@ masks: BoolTensor = torch.cat([
 ])
 
 # negative_prompt: Optional[str] = uncond_prompt
+# negative_prompt: Optional[str] = ''
 negative_prompt: Optional[str] = 'low quality, blurry, weird proportions, unrealistic, uninteresting, ugly'
 # negative_prompt: Optional[str] = 'worst quality, low quality, normal quality, old, early, lowres, bad anatomy, blurry, cropped, text, jpeg artifacts, signature, watermark, username, artist name, trademark, title, multiple view, reference sheet, long body, disfigured, ugly, monochrome, transparent background'
 # negative_prompt: Optional[str] = 'worst quality, low quality, blurry, lowres'
@@ -230,8 +231,8 @@ cond_prompts: List[str] = [
   # 'macaron',
   'illustration of ice dragon fighting in a fantasy battleground',
   'illustration of fire dragon fighting in a fantasy battleground',
-  'illustration of lightning dragon fighting in a fantasy battleground',
-  # 'illustration of sakura tree in full bloom, petals falling, spring day, calm sky, rolling hills, grass, flowers masterpiece, dramatic, highly detailed, high dynamic range',
+  # 'illustration of lightning dragon fighting in a fantasy battleground',
+  'illustration of sakura tree in full bloom, petals falling, spring day, calm sky, rolling hills, grass, flowers masterpiece, dramatic, highly detailed, high dynamic range',
   # "illustration of ice dragon girl, wings, winter day, masterpiece, dramatic, highly detailed, high dynamic range, watercolor (medium)",
   # 'illustration of fire dragon girl, wings, night, masterpiece, dramatic, highly detailed, high dynamic range, aurora borealis',
 ]
